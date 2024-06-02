@@ -117,3 +117,58 @@ using Helm `--set` directives.
 * `configMap.fileName` - The file name of the config map, when mounted in the pod.
 * `configMap.content.*` - YAML keys and values under `content` are copied verbatim
   into the configmap's content.
+
+## IRSA on Kubernetes
+
+Allow containers to assume IAM role via AWS STS Service, to connect to AWS provided services via IAM Role instead of credentials.
+To allow a Kubernetes ServiceAccount to assume an IAM role, you need to configure IAM Roles for Service Accounts (IRSA) in AWS. 
+
+{{- if .Values.serviceAccount.irsa.create }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Values.serviceAccount.name | lower | quote }}
+  labels:
+    app.kubernetes.io/name: {{ .Values.serviceAccount.name | lower | quote }}
+    app.kubernetes.io/part-of: {{ .Values.system | quote }}
+    app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/YOUR_IAM_ROLE_ARN
+{{- end }}
+
+
+This involves creating an IAM role with the necessary policies and setting up a trust relationship between the IAM role 
+and the Kubernetes ServiceAccount. Here’s how we can update your Helm template to support this.
+
+Step 1: Create the IAM Role and Policy
+First, create an IAM role with a trust relationship that allows your Kubernetes ServiceAccount to assume it. 
+You can do this via the AWS Management Console, CLI, or a Terraform script. Here’s an example using the AWS CLI:
+
+#### Create a policy document that allows the necessary actions
+cat <<EOF > trust-policy.json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::YOUR_AWS_ACCOUNT_ID:oidc-provider/YOUR_OIDC_PROVIDER"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "YOUR_OIDC_PROVIDER:sub": "system:serviceaccount:YOUR_KUBERNETES_NAMESPACE:YOUR_KUBERNETES_SERVICE_ACCOUNT_NAME"
+        }
+      }
+    }
+  ]
+}
+EOF
+
+#### Create the IAM role
+aws iam create-role --role-name YOUR_ROLE_NAME --assume-role-policy-document file://trust-policy.json
+
+#### Attach the necessary policies to the role
+aws iam attach-role-policy --role-name YOUR_ROLE_NAME --policy-arn arn:aws:iam::aws:policy/AmazonS3ReadOnlyAccess
+
+#### NOTE: Before creating the IAM Policy and triggering the command to create role, replace YOUR_AWS_ACCOUNT_ID, YOUR_OIDC_PROVIDER in AWS EKS Cluster, YOUR_KUBERNETES_NAMESPACE, YOUR_KUBERNETES_SERVICE_ACCOUNT_NAME, and YOUR_ROLE_NAME with your actual values.
