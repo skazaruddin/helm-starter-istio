@@ -7,6 +7,10 @@ metadata:
     app.kubernetes.io/part-of: {{ .Values.system | quote }}
     app.kubernetes.io/managed-by: {{ .Release.Service | quote }}
   namespace: {{ .Release.Namespace | quote }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "{{ .Values.prometheus.port }}"
+    prometheus.io/path: "{{ .Values.prometheus.path }}"
 spec:
   ports:
 {{- range .Values.ports }}
